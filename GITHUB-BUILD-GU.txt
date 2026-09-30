@@ -1,0 +1,5 @@
+1. GitHub repository ના root માં આ ઝિપની બધી ફાઇલ/ફોલ્ડર (.github સહિત) અપલોડ કરી main માં commit કરો.
+2. Actions ટેબ ખોલો. બે workflow દેખાશે: Android APK અને Windows EXE.
+3. દરેકમાં "Run workflow" દબાવો, લીલું નિશાન આવે ત્યાં સુધી રાહ જુઓ.
+4. Run ખોલી નીચે Artifacts માંથી APK / EXE ડાઉનલોડ કરો.
+5. જો લાલ (fail) આવે તો તે step નો લાલ લોગ મને મોકલો.

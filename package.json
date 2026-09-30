@@ -1,0 +1,36 @@
+{
+  "name": "protocol-sakha",
+  "version": "13.0.0",
+  "description": "PROTOCOL SAKHA - Police Duty Rotation",
+  "main": "main.js",
+  "author": "PROTOCOL SAKHA",
+  "license": "MIT",
+  "scripts": {
+    "libs": "node prepare-libs.js",
+    "dist": "node prepare-libs.js && electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.15.3",
+    "jspdf": "2.5.1",
+    "html2canvas": "1.4.1"
+  },
+  "build": {
+    "appId": "com.protocolpoliceduty.desktop",
+    "productName": "PROTOCOL SAKHA",
+    "icon": "pdr_icon.ico",
+    "files": ["main.js", "preload.js", "prompt-preload.js", "index.html", "pdr_icon.ico", "lib/**/*", "package.json"],
+    "win": {
+      "icon": "pdr_icon.ico",
+      "target": [{"target": "nsis", "arch": ["x64"]}, {"target": "portable", "arch": ["x64"]}]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "PROTOCOL SAKHA",
+      "artifactName": "PROTOCOL-SAKHA-Setup-${version}.${ext}"
+    },
+    "portable": {"artifactName": "PROTOCOL-SAKHA-Portable-${version}.${ext}"}
+  }
+}

@@ -1,0 +1,38 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.protocolpoliceduty.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.protocolpoliceduty.app'
+        minSdk 23
+        targetSdk 34
+        versionCode 13
+        versionName '13.0'
+    }
+
+    signingConfigs {
+        sakha {
+            storeFile file('protocol-sakha.jks')
+            storePassword 'sakha123456'
+            keyAlias 'sakha'
+            keyPassword 'sakha123456'
+        }
+    }
+
+    buildTypes {
+        debug   { signingConfig signingConfigs.sakha }
+        release { signingConfig signingConfigs.sakha; minifyEnabled false }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        encoding 'UTF-8'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+}

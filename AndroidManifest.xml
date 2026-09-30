@@ -1,0 +1,31 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <application
+      android:theme="@style/AppTheme"
+      android:label="PROTOCOL SAKHA"
+      android:icon="@drawable/pdr_icon"
+      android:roundIcon="@drawable/pdr_icon"
+      android:allowBackup="false"
+      android:hardwareAccelerated="true"
+      android:supportsRtl="true">
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:launchMode="singleTask"
+        android:screenOrientation="unspecified"
+        android:windowSoftInputMode="adjustResize"
+        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode|density|fontScale|locale|layoutDirection">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="com.protocolpoliceduty.app.fileprovider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/>
+    </provider>
+  </application>
+</manifest>
