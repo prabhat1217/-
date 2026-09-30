@@ -8,7 +8,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -16,13 +16,18 @@ jobs:
         with:
           node-version: 20
 
+      - name: Check package.json
+        shell: pwsh
+        run: |
+          Get-Content package.json
+
       - name: Install dependencies
         run: npm install
 
-      - name: Build Windows EXE
+      - name: Build Windows application
         run: npm run dist
 
-      - name: Upload EXE
+      - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
           name: PROTOCOL-SAKHA-Windows-EXE
