@@ -2292,60 +2292,229 @@ function order(p,S){return p.slice().sort(function(a,b){var ka=key(a),kb=key(b);
 /* fair rotation: whoever has had duty least recently (anywhere) goes first, then least recently at this station */
 function build(b,spec,old,advance){
   var d=D(),id=old?old.id:uid(),log=getLog().filter(function(x){return x.id!==id}),S=stats(log,spec.station),used=usedKeys(b,id),names={},sh={},t=Date.now(),add=[],partnerAdd={};
-  var avoid=new Set();if(advance&&old)RK.forEach(function(r){(old.names[r]||[]).forEach(function(x){avoid.add(x.k)})});
+  var avoid=new Set();
+  if(advance&&old)RK.forEach(function(r){(old.names[r]||[]).forEach(function(x){avoid.add(x.k)})});
+
   var u=unavail(d);
   var queues={},filled={},chosenKeys={};
-  RK.forEach(function(r){var p=order(pool(r,d,used),S),f=p.filter(function(e){return !avoid.has(key(e))}),rest=p.filter(function(e){return avoid.has(key(e))});queues[r]=f.concat(rest);filled[r]=[]});
-  function need(r){return (spec.req[r]||0)-filled[r].length}
-  function empByKey(k){return employeesList.find(function(x){return key(x)===k&&x.status==='ડ્યુટી માટે ઉપલબ્ધ'&&!u.has(k)})||null}
-  function take(e2,r2,forced){filled[r2].push(e2);chosenKeys[key(e2)]=1;used.add(key(e2));add.push({t:t++,id:id,st:spec.station,rk:r2,k:key(e2)});if(forced)partnerAdd[key(e2)]=1}
-  /* FIX: saved vehicle-pairs are locked during automatic rotation. */
-  function pairOf(e2){
-    var pk=partnerKeyOf(e2);if(!pk)return null;
-    var pe=empByKey(pk);if(!pe||chosenKeys[pk]||used.has(pk))return null;
-    var pr=rankGroupOf(pe);if(!pr)return null;
-    return {e:pe,r:pr,k:pk};
+
+  RK.forEach(function(r){
+    var p=order(pool(r,d,used),S),
+        f=p.filter(function(e){return !avoid.has(key(e))}),
+        rest=p.filter(function(e){return avoid.has(key(e))});
+    queues[r]=f.concat(rest);
+    filled[r]=[];
+  });
+
+  function need(r){
+    return (spec.req[r]||0)-filled[r].length
   }
+
+  function empByKey(k){
+    return employeesList.find(function(x){
+      return key(x)===k&&x.status==='ડ્યુટી માટે ઉપલબ્ધ'&&!u.has(k)
+    })||null
+  }
+
+  function take(e2,r2,forced){
+    filled[r2].push(e2);
+    chosenKeys[key(e2)]=1;
+    used.add(key(e2));
+    add.push({t:t++,id:id,st:spec.station,rk:r2,k:key(e2)});
+    if(forced)partnerAdd[key(e2)]=1
+  }
+
+  /*
+   * FIXED PAIR:
+   * જો કર્મચારીની fixed pair હોય અને partner ઉપલબ્ધ હોય
+   * તો બંને મૂળ જોડી તરીકે જ આવશે.
+   *
+   * જો partner રજા / training / office duty /
+   * inactive / unavailable હોય તો બીજો કર્મચારી
+   * એકલો duty કરશે.
+   *
+   * તેને કોઈ ત્રીજા કર્મચારી સાથે નવી pair બનાવાશે નહીં.
+   */
+  function pairOf(e2){
+    var pk=partnerKeyOf(e2);
+    if(!pk)return null;
+
+    var pe=empByKey(pk);
+
+    /*
+     * Partner ઉપલબ્ધ નથી.
+     * એટલે આ કર્મચારી locked-alone છે.
+     */
+    if(!pe){
+      return {
+        unavailable:true,
+        k:pk
+      }
+    }
+
+    /*
+     * Partner પહેલેથી પસંદ થઈ ગયો હોય
+     * અથવા પહેલેથી dutyમાં વપરાઈ ગયો હોય.
+     */
+    if(chosenKeys[pk]||used.has(pk))return null;
+
+    var pr=rankGroupOf(pe);
+    if(!pr)return null;
+
+    return {
+      e:pe,
+      r:pr,
+      k:pk,
+      unavailable:false
+    }
+  }
+
   function findCandidate(r){
     for(var i=0;i<queues[r].length;i++){
-      var e2=queues[r][i],ek=key(e2);
+      var e2=queues[r][i],
+          ek=key(e2);
+
       if(chosenKeys[ek])continue;
+
       var pp=pairOf(e2);
-      if(pp){
-        if(need(pp.r)>0)return {e:e2,p:pp};
-        continue;
+
+      /*
+       * FIX:
+       * Fixed partner ઉપલબ્ધ નથી.
+       * આ કર્મચારીને એકલો assign કરવો.
+       */
+      if(pp&&pp.unavailable){
+        return {
+          e:e2,
+          p:null,
+          lockedAlone:true
+        }
       }
+
+      /*
+       * Fixed partner ઉપલબ્ધ છે.
+       * Partnerની rankમાં જગ્યા હોય તો
+       * બંનેને સાથે assign કરવું.
+       */
+      if(pp){
+        if(need(pp.r)>0){
+          return {
+            e:e2,
+            p:pp,
+            lockedAlone:false
+          }
+        }
+
+        /*
+         * Partnerની rankમાં demand નથી,
+         * તેથી આ pair અહીં force ન કરવી.
+         */
+        continue
+      }
+
+      /*
+       * Fixed pair ધરાવતા કર્મચારીને
+       * કોઈ બીજા કર્મચારી સાથે નવી pair
+       * બનાવવાની મંજૂરી નથી.
+       */
       if(partnerKeyOf(e2))continue;
-      return {e:e2,p:null};
+
+      return {
+        e:e2,
+        p:null,
+        lockedAlone:false
+      }
     }
-    return null;
+
+    return null
   }
+
   RK.forEach(function(r){
-   var guard=0;
-   while(need(r)>0&&guard++<500){
-    var c=findCandidate(r);
-    if(!c)break;
-    take(c.e,r,!!c.p);
-    if(c.p&&need(c.p.r)>0)take(c.p.e,c.p.r,true);
-   }
-  });
-  /* Final pass for any compatible saved pair with two open rank slots. */
-  RK.forEach(function(r){
-   var guard=0;
-   while(need(r)>0&&guard++<500){
-    var found=null;
-    for(var i=0;i<queues[r].length;i++){
-      var e2=queues[r][i],ek=key(e2);if(chosenKeys[ek])continue;
-      var pp=pairOf(e2);if(pp&&need(pp.r)>0){found={e:e2,p:pp};break}
+    var guard=0;
+
+    while(need(r)>0&&guard++<500){
+      var c=findCandidate(r);
+
+      if(!c)break;
+
+      /*
+       * Partner unavailable હોય તો
+       * કર્મચારી એકલો duty કરશે.
+       */
+      take(c.e,r,!!c.p);
+
+      /*
+       * Partner ઉપલબ્ધ હોય તો
+       * મૂળ fixed pair જાળવવી.
+       */
+      if(c.p&&need(c.p.r)>0){
+        take(c.p.e,c.p.r,true)
+      }
     }
-    if(!found)break;
-    take(found.e,r,true);take(found.p.e,found.p.r,true);
-   }
   });
-  RK.forEach(function(r){names[r]=filled[r].map(function(e2){return{k:key(e2),n:e2.name,b:e2.bno,p:!!partnerAdd[key(e2)]}});if(need(r)>0)sh[r]=need(r)});
+
+  /*
+   * Final pass:
+   * જ્યાં બંને fixed partners ઉપલબ્ધ હોય
+   * અને બંનેની rankમાં demand હોય ત્યાં
+   * original pair જાળવવી.
+   */
+  RK.forEach(function(r){
+    var guard=0;
+
+    while(need(r)>0&&guard++<500){
+      var found=null;
+
+      for(var i=0;i<queues[r].length;i++){
+        var e2=queues[r][i],
+            ek=key(e2);
+
+        if(chosenKeys[ek])continue;
+
+        var pp=pairOf(e2);
+
+        if(pp&&!pp.unavailable&&need(pp.r)>0){
+          found={
+            e:e2,
+            p:pp
+          };
+          break
+        }
+      }
+
+      if(!found)break;
+
+      take(found.e,r,true);
+      take(found.p.e,found.p.r,true);
+    }
+  });
+
+  RK.forEach(function(r){
+    names[r]=filled[r].map(function(e2){
+      return {
+        k:key(e2),
+        n:e2.name,
+        b:e2.bno,
+        p:!!partnerAdd[key(e2)]
+      }
+    });
+
+    if(need(r)>0)sh[r]=need(r)
+  });
+
   setLog(log.concat(add));
-  return{id:id,key:spec.station+'|'+spec.route+'|'+spec.point,station:spec.station,route:spec.route,point:spec.point,req:spec.req,names:names,short:sh};
- }
+
+  return {
+    id:id,
+    key:spec.station+'|'+spec.route+'|'+spec.point,
+    station:spec.station,
+    route:spec.route,
+    point:spec.point,
+    req:spec.req,
+    names:names,
+    short:sh
+  };
+}
 function PO(){return (window.pdrOffice&&window.pdrOffice())||{name:'પ્રોટોકોલ શાખા, ગાંધીનગર',title:'ડ્યુટી ફાળવણી'}}
 function hm(t){var d=new Date(t);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)}
 function fmtDate(){var v=D().split('-');var dn=$('#topDayName');return v[2]+'-'+v[1]+'-'+v[0]+(dn?' ('+dn.textContent.trim()+')':'')}
@@ -2367,29 +2536,7 @@ function avail(){var el=$('#pdrbAvail');if(!el)return;var d=D(),u=usedKeys(loadB
 
 function ok(){var sp=spec();if(!sp){alert('પહેલા પોલીસ સ્ટેશન પસંદ કરો.');return}sp.req={};var any=0;RK.forEach(function(r){sp.req[r]=num($('#pdrbN'+r).value);any+=sp.req[r]});if(!any){alert('ઓછામાં ઓછા એક હોદ્દા (PSI / ASI / HC / PC) ની સંખ્યા લખો.');return}var d=D(),b=loadB(d),k=sp.station+'|'+sp.route+'|'+sp.point,i=b.cards.map(function(c){return c.key}).indexOf(k),c=build(b,sp,i>-1?b.cards[i]:null,false);if(i>-1)b.cards[i]=c;else b.cards.push(c);saveB(d,b);renderBoard();RK.forEach(function(r){var el=$('#pdrbN'+r);if(el)el.value='0'});avail();var m=[];RK.forEach(function(r){if(c.short[r])m.push(r+': '+c.short[r]+' ઓછા')});if(m.length)alert('સ્ટાફ ઓછો છે:\n'+m.join('\n'))}
 
-function find(id){var b=loadB(D());return{b:b,i:b.cards.map(function(c){return c.id}).indexOf(id)}} function again(id){var f=find(id);if(f.i<0)return;f.b.cards[f.i]=build(f.b,{station:f.b.cards[f.i].station,route:f.b.cards[f.i].route,point:f.b.cards[f.i].point,req:f.b.cards[f.i].req},f.b.cards[f.i],true);saveB(D(),f.b);renderBoard()} function del(id){if(!confirm('આ ફાળવણી કાઢી નાખવી છે?'))return;var f=find(id);if(f.i<0)return;f.b.cards.splice(f.i,1);setLog(getLog().filter(function(x){return x.id!==id}));saveB(D(),f.b);renderBoard()} function edit(id){var f=find(id);if(f.i<0)return;var c=f.b.cards[f.i],si=policeStationData.map(function(s){return s.name}).indexOf(c.station);if(si<0)return; $('#pdrbSt').value=si;fillRoutes();var s=policeStationData[si],ri=s.routes.map(function(r){return r.name}).indexOf(c.route);$('#pdrbRt').value=ri>-1?ri:'';fillPoints();var r=ri>-1?s.routes[ri]:null,pi=r?r.points.indexOf(c.point):-1;$('#pdrbPt').value=pi>-1?pi:'';prefill();$('#pdrbSt').scrollIntoView({behavior:'smooth',block:'center'})} function swap(id,r,i){ var f=find(id);if(f.i<0)return;var c=f.b.cards[f.i],cur=c.names[r][i],d=D(),S=stats(getLog(),c.station),used=usedKeys(f.b,null); function cands(all){var o=[];(all?RK:[r]).forEach(function(rr){if(all&&rr===r)return;order(pool(rr,d,used),S).forEach(function(e){o.push({e:e,rk:rr})})});return o} var old=$('#pdrbSw');if(old)old.remove();var m=document.createElement('div');m.id='pdrbSw';m.className='contact-modal show';m.style.zIndex=9500; m.innerHTML='<div class="contact-modal-card"><h3>🔁 નામ બદલો</h3><p style="margin:0 0 8px"><b>'+esc(cur.n)+'</b> ('+r+') — '+esc(c.station)+'</p>' +'<label>નવું નામ (રોટેશન મુજબ ઉપર)</label><select id="pdrbSwSel"></select><div id="pdrbSwNote" style="font-size:12px;color:#fca5a5;margin:4px 0"></div>' +'<label class="pdrb-ck"><input type="checkbox" id="pdrbSwAll" style="width:auto"> અન્ય હોદ્દામાંથી પણ બતાવો</label>' +'<label class="pdrb-ck"><input type="checkbox" id="pdrbSwLv" style="width:auto" checked> જૂના કર્મચારીને આજ માટે રજા / અનુપલબ્ધ મૂકો</label>' +'<label>કારણ</label><select id="pdrbSwRs"><option>બીમારી</option><option>ઇમરજન્સી</option><option>બદલી / અન્ય ફરજ</option><option>અન્ય</option></select>' +'<div class="contact-modal-actions"><button type="button" id="pdrbSwX">રદ કરો</button><button type="button" class="form-btn" id="pdrbSwOk">✔ બદલો</button></div></div>'; document.body.appendChild(m);m.onclick=function(e){if(e.target===m)m.remove()};$('#pdrbSwX').onclick=function(){m.remove()}; var list=[];function fill(){list=cands($('#pdrbSwAll').checked);$('#pdrbSwSel').innerHTML=list.length?list.map(function(x,k){return '<option value="'+k+'">'+esc(x.e.name)+(x.e.bno&&x.e.bno!=='-'?' ('+esc(x.e.bno)+')':'')+(x.rk!==r?' ['+x.rk+']':'')+'</option>'}).join(''):'<option value="">— કોઈ ઉપલબ્ધ નથી —</option>';$('#pdrbSwNote').textContent=$('#pdrbSwAll').checked&&list.length?'⚠️ અન્ય હોદ્દાનો કર્મચારી પસંદ કરો છો.':''} $('#pdrbSwAll').onchange=fill;fill();if(!list.length){$('#pdrbSwAll').checked=true;fill();$('#pdrbSwNote').textContent=list.length?'એ જ હોદ્દાનો કોઈ ઉપલબ્ધ નથી, અન્ય હોદ્દામાંથી પસંદ કરો.':'બદલવા માટે કોઈ ઉપલબ્ધ કર્મચારી નથી.'} $('#pdrbSwOk').onclick=function(){ var p=list[+$('#pdrbSwSel').value];if(!p){alert('બદલવા માટે કોઈ ઉપલબ્ધ કર્મચારી નથી.');return} if(p.rk!==r&&!confirm('⚠️ '+r+' ની જગ્યાએ '+p.rk+' મૂકવા છે?'))return; var e=p.e,lv=$('#pdrbSwLv').checked,rs=$('#pdrbSwRs').value,log=getLog().filter(function(x){return !(x.id===id&&x.rk===r&&x.k===cur.k)}); log.push({t:Date.now(),id:id,st:c.station,rk:p.rk,k:key(e)});setLog(log); c.names[r][i]={k:key(e),n:e.name,b:e.bno,x:p.rk!==r?p.rk:undefined,ch:1}; (c.chg=c.chg||[]).push({t:Date.now(),o:cur.n,n:e.name,rs:lv?rs:'',rk:r}); if(lv){var u=J('pdr_v4_unavailable',[]);u.push({employeeKey:cur.k,name:cur.n,date:d,start:'00:00',end:'23:59',reason:rs});ls.setItem('pdr_v4_unavailable',JSON.stringify(u))} saveB(d,f.b);m.remove();renderBoard(); if(confirm('નવા કર્મચારી ('+e.name+') ને WhatsApp સંદેશ મોકલવો છે?')){var mob=nd(e.mobile).replace(/\D/g,'').slice(-10); if(mob.length!==10)alert('આ કર્મચારીનો મોબાઈલ નંબર નથી.');else window.open('https://wa.me/91'+mob+'?text='+encodeURIComponent('🚔 '+PO().name+'\n'+e.name+', આપને તા. '+fmtDate()+' ના રોજ '+c.station+([c.route,c.point].filter(Boolean).length?' ('+[c.route,c.point].filter(Boolean).join(' • ')+')':'')+' ખાતે બંદોબસ્ત ફરજ સોંપવામાં આવેલ છે. કૃપા કરી સમયસર હાજર થશો.'),'_blank')}} } function clearAll(){var b=loadB(D());if(!b.cards.length)return;if(!confirm('આજની તારીખની બધી ફાળવણી સાફ કરવી છે?'))return;var ids=new Set(b.cards.map(function(c){return c.id}));setLog(getLog().filter(function(x){return !ids.has(x.id)}));saveB(D(),{cards:[]});renderBoard()} function textOut(){var b=loadB(D());var t='🚔 *'+PO().name+' — '+PO().title+'*\n📅 '+fmtDate()+'\n';b.cards.forEach(function(c){t+='\n🏛️ *'+c.station+'*'+([c.route,c.point].filter(Boolean).length?' ('+[c.route,c.point].filter(Boolean).join(' • ')+')':'')+'\n';RK.forEach(function(r){var a=c.names[r]||[];if(a.length)t+=r+': '+a.map(function(x,i){return (i+1)+'. '+x.n}).join(', ')+'\n'})});return t} function wa(){if(!loadB(D()).cards.length){alert('પહેલા ફાળવણી કરો.');return}window.open('https://wa.me/?text='+encodeURIComponent(textOut()),'_blank')} function flat(src,dst){var cs=getComputedStyle(src),s='';for(var i=0;i<cs.length;i++)s+=cs[i]+':'+cs.getPropertyValue(cs[i])+';';dst.setAttribute('style',s);for(var j=0;j<src.children.length;j++)flat(src.children[j],dst.children[j])} function snapSvg(el){return new Promise(function(res,rej){ var r=el.getBoundingClientRect(),w=Math.ceil(r.width),h=Math.ceil(r.height),c=el.cloneNode(true);flat(el,c); c.style.cssText+=';position:relative;inset:auto;margin:0;overflow:hidden;width:'+w+'px;height:'+h+'px;'; var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"><foreignObject width="100%" height="100%">'+new XMLSerializer().serializeToString(c)+'</foreignObject></svg>',img=new Image(); img.onload=function(){var cv=document.createElement('canvas');cv.width=w*2;cv.height=h*2;var x=cv.getContext('2d');x.scale(2,2);x.drawImage(img,0,0);try{cv.toBlob(function(b){b?res(b):rej(new Error('blob'))},'image/png')}catch(e){rej(e)}}; img.onerror=function(){rej(new Error('svg'))};img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)})} async function snapLib(el){await loadPDFLibraries();if(!window.html2canvas)throw new Error('html2canvas');var c=await html2canvas(el,{scale:2,backgroundColor:'#071329',useCORS:true,logging:false});return new Promise(function(res){c.toBlob(res,'image/png')})} async function photo(){ var el=$('#pdrBoard');if(!el||!loadB(D()).cards.length){alert('પહેલા ફાળવણી કરો.');return} var z=document.body.style.zoom; try{el.classList.add('pdrb-shot');document.body.style.zoom='1'; var bl;try{bl=await snapSvg(el)}catch(e){bl=await snapLib(el)} var a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='PROTOCOL-SAKHA-Duty-'+D()+'.png';document.body.appendChild(a);a.click();setTimeout(function(){a.remove();URL.revokeObjectURL(a.href)},4000) }catch(e){alert('ફોટો બનાવી શકાયો નથી. સ્ક્રીનશોટ લઈ શકો છો.')} finally{el.classList.remove('pdrb-shot');document.body.style.zoom=z}
-}
-var ph=null;
-function maxi(on){var el=$('#pdrBoard');if(!el)return;
- if(on){ph=document.createComment('b');el.parentNode.insertBefore(ph,el);document.body.appendChild(el);el.classList.add('pdrb-max');try{document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen()}catch(e){}}
- else if(ph){ph.parentNode.insertBefore(el,ph);ph.remove();ph=null;el.classList.remove('pdrb-max');try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
- }
-document.addEventListener('fullscreenchange',function(){if(!document.fullscreenElement&&ph)maxi(false)});
-function open(){
- var t=$('#viewTitle'),c=$('#viewContent');if(!c)return;if(t)t.innerText='📺 સ્ટેશન માંગણી અને ઓટો રોટેશન બોર્ડ';
- c.innerHTML='<div class="pdrb-layout"><div class="pdrb-side pdr-noprint"><h4>➕ પોલીસ સ્ટેશન પસંદ કરો</h4>'
- +'<label>પોલીસ સ્ટેશન</label><select id="pdrbSt">'+policeStationData.map(function(s,i){return '<option value="'+i+'">'+esc(s.name)+'</option>'}).join('')+'</select>'
- +'<label>રૂટ (વૈકલ્પિક)</label><select id="pdrbRt"></select><label>પોઈન્ટ (વૈકલ્પિક)</label><select id="pdrbPt"></select>'
- +'<label style="margin-top:12px">માંગણી મુજબ સંખ્યા</label><div class="pdrb-cnt">'+RK.map(function(r){return '<div><label>'+r+'</label><input id="pdrbN'+r+'" type="text" inputmode="numeric" value="0"></div>'}).join('')+'</div>'
- +'<div class="pdrb-avail" id="pdrbAvail"></div><button type="button" class="pdrb-btn ok" id="pdrbOk">✅ OK — નામ ઓટોમેટિક ફાળવો</button>'
- +'<button type="button" class="pdrb-btn" id="pdrbHk">📄 સત્તાવાર હુકમ (PDF)</button><hr><div class="pdrb-row2"><button type="button" class="pdrb-btn sm" id="pdrbPhoto">📷 ફોટો (PNG)</button><button type="button" class="pdrb-btn sm" id="pdrbMax">📺 ફુલ સ્ક્રીન</button><button type="button" class="pdrb-btn sm" id="pdrbWa">💬 WhatsApp</button><button type="button" class="pdrb-btn sm" id="pdrbClr">🗑️ બધું સાફ</button></div>'
- +'<label style="margin-top:12px"><input type="checkbox" id="pdrbBno" style="width:auto"> બકલ નંબર પણ બતાવો</label>'
- +'<div class="pdrb-avail">🔄 = બીજા નામ (ફરી રોટેશન) • ✏️ = સંખ્યા સુધારો • કોઈ નામ પર ટેપ કરો તો તે નામ બદલી શકાય.</div>'
- +'<button type="button" class="pdrb-btn sm" onclick="pdrOldRequirement()">📍 પોઈન્ટવાર જૂની ફાળવણી</button></div>'
- +'<div><div id="pdrBoard"></div></div></div>';
- $('#pdrbSt').onchange=fillRoutes;$('#pdrbRt').onchange=fillPoints;$('#pdrbPt').onchange=prefill;$('#pdrbOk').onclick=ok;$('#pdrbPhoto').onclick=photo;$('#pdrbMax').onclick=function(){maxi(true)};$('#pdrbWa').onclick=wa;$('#pdrbHk').onclick=function(){if(window.pdrHukam)pdrHukam();else alert('આ સુવિધા ઉપલબ્ધ નથી.')};$('#pdrbClr').onclick=clearAll;
- $('#pdrbBno').checked=!!opts().bno;$('#pdrbBno').onchange=function(){ls.setItem('pdr_board_opts',JSON.stringify({bno:this.checked}));renderBoard()};
- fillRoutes();renderBoard();
+function find(id){var b=loadB(D());return{b:b,i:b.cards.map(function(c){return c.id}).indexOf(id)}} function again(id){var f=find(id);if(f.i<0)return;f.b.cards[f.i]=build(f.b.cards?f.b:{cards
 }
 function copyFrom(src){var sb=loadB(src),d=D();if(src===d||!sb.cards.length)return 0;var b=loadB(d);
  sb.cards.forEach(function(c){var k=c.key,i=b.cards.map(function(x){return x.key}).indexOf(k),n=build(b,{station:c.station,route:c.route,point:c.point,req:c.req},i>-1?b.cards[i]:null,false);if(i>-1)b.cards[i]=n;else b.cards.push(n)});saveB(d,b);return sb.cards.length}
